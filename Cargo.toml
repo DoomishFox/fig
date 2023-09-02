@@ -1,0 +1,17 @@
+[package]
+name = "fig"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+log = "0.4.19"
+pollster = "0.3.0"
+wgpu = "0.16.1"
+winit = "0.28.6"
+bytemuck = { version = "1.13.1", features = [ "derive" ] }
+cgmath = "0.18.0"
+
+gcode = { package = "fox-gcode", git = "https://github.com/DoomishFox/fox-gcode", branch = "main" }
+graphics = { package = "fox-graphics", git = "https://github.com/DoomishFox/fox-graphics", branch = "main" }
