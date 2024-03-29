@@ -12,6 +12,14 @@ wgpu = "0.16.1"
 winit = "0.28.6"
 bytemuck = { version = "1.13.1", features = [ "derive" ] }
 cgmath = "0.18.0"
+winapi = "0.3.9"
+wio = "0.2.2"
+#lazy_static = "1.4.0"
+com-wrapper = "0.1.0"
+dcommon = "0.3.0-alpha1"
+directwrite = "0.3.0-alpha4"
 
-gcode = { package = "fox-gcode", git = "https://github.com/DoomishFox/fox-gcode", branch = "main" }
-graphics = { package = "fox-graphics", git = "https://github.com/DoomishFox/fox-graphics", branch = "main" }
+#gcode = { package = "fox-gcode", git = "https://github.com/DoomishFox/fox-gcode", branch = "main" }
+gcode = { package = "fox-gcode", path = "../fox-gcode" }
+#graphics = { package = "fox-graphics", git = "https://github.com/DoomishFox/fox-graphics", branch = "main" }
+graphics = { package = "fox-graphics", path = "../fox-graphics" }
