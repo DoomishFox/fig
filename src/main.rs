@@ -1,19 +1,23 @@
 mod reader;
 mod camera;
 mod text;
-mod winfont;
+//mod winfont;
 
 use graphics::data::Vertex;
-use wgpu::util::DeviceExt;
+use wgpu::{util::DeviceExt, BindGroup};
+use winit::event::{WindowEvent, KeyboardInput, ElementState, VirtualKeyCode};
 
 use gcode::GCommand;
 use camera::*;
 
-extern crate directwrite;
+//extern crate directwrite;
 //use directwrite::font_collection::FontCollection;
 //use directwrite::enums::{FontStretch, FontStyle, FontWeight, InformationalStringId};
 
-
+struct BoundTextLine {
+    bind_group: wgpu::BindGroup,
+    len: usize,
+}
 
 struct Fig {
     glyph_bind_group: wgpu::BindGroup,
@@ -29,22 +33,24 @@ struct Fig {
 
     text_vertex_buffer: wgpu::Buffer,
     text_pipeline: wgpu::RenderPipeline,
-    text_buffer: text::Buffer,
-    text_bind_group: wgpu::BindGroup,
+    text_bind_group_layout: wgpu::BindGroupLayout,
+    text_bind_groups: Vec<BoundTextLine>,
 
     screen_metadata_buffer: wgpu::Buffer,
+
+    command_string: String,
 }
 
 impl Fig {
     fn init(
-        state: &graphics::AppSkeleton,
+        skeleton: &graphics::AppSkeleton,
         vertices: Vec::<Vertex>,
     ) -> Self {
 
-        let screen_uniform_buffer = state.device.create_buffer_init(
+        let screen_uniform_buffer = skeleton.device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Screen Metadata Buffer"),
-                contents: bytemuck::cast_slice(state.screen_size.size()),
+                contents: bytemuck::cast_slice(skeleton.screen_size.size()),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             }
         );
@@ -83,7 +89,7 @@ impl Fig {
             depth_or_array_layers: 1,
         };
 
-        let atlas_texture = state.device.create_texture(
+        let atlas_texture = skeleton.device.create_texture(
             &wgpu::TextureDescriptor {
                 size: atlas_size,
                 mip_level_count: 1,
@@ -96,7 +102,7 @@ impl Fig {
             }
         );
 
-        state.queue.write_texture(
+        skeleton.queue.write_texture(
             wgpu::ImageCopyTexture {
                 texture: &atlas_texture,
                 mip_level: 0,
@@ -113,7 +119,7 @@ impl Fig {
         );
 
         let atlas_texture_view = atlas_texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let atlas_sampler = state.device.create_sampler(&wgpu::SamplerDescriptor {
+        let atlas_sampler = skeleton.device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
@@ -123,7 +129,7 @@ impl Fig {
             ..Default::default()
         });
 
-        let glyph_bind_group_layout = state.device.create_bind_group_layout(
+        let glyph_bind_group_layout = skeleton.device.create_bind_group_layout(
             &wgpu::BindGroupLayoutDescriptor {
                 entries: &[
                     wgpu::BindGroupLayoutEntry {
@@ -150,7 +156,7 @@ impl Fig {
             }
         );
 
-        let glyph_bind_group = state.device.create_bind_group(
+        let glyph_bind_group = skeleton.device.create_bind_group(
             &wgpu::BindGroupDescriptor {
                 layout: &glyph_bind_group_layout,
                 entries: &[
@@ -176,7 +182,7 @@ impl Fig {
             target: (0.0, 0.0, 0.0).into(),
             // which way is "up"
             up: cgmath::Vector3::unit_y(),
-            aspect: state.config.width as f32 / state.config.height as f32,
+            aspect: skeleton.config.width as f32 / skeleton.config.height as f32,
             fovy: 45.0,
             znear: 0.1,
             zfar: 1000.0,
@@ -185,7 +191,7 @@ impl Fig {
         let mut camera_uniform = CameraUniform::new();
         camera_uniform.update_view_proj(&camera);
 
-        let camera_buffer = state.device.create_buffer_init(
+        let camera_buffer = skeleton.device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Camera Buffer"),
                 contents: bytemuck::cast_slice(&[camera_uniform]),
@@ -193,7 +199,7 @@ impl Fig {
             }
         );
 
-        let camera_bind_group_layout = state.device.create_bind_group_layout(
+        let camera_bind_group_layout = skeleton.device.create_bind_group_layout(
             &wgpu::BindGroupLayoutDescriptor {
                 entries: &[
                     wgpu::BindGroupLayoutEntry {
@@ -211,7 +217,7 @@ impl Fig {
             }
         );
 
-        let camera_bind_group = state.device.create_bind_group(
+        let camera_bind_group = skeleton.device.create_bind_group(
             &wgpu::BindGroupDescriptor {
                 layout: &camera_bind_group_layout,
                 entries: &[
@@ -226,13 +232,13 @@ impl Fig {
         // ====== END CAMERA ======
 
         // ====== WIREFRAME PIPELINE ======
-        let shader = state.device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        let shader = skeleton.device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
         let render_pipeline_layout =
-            state.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            skeleton.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
                 bind_group_layouts: &[
                     &camera_bind_group_layout,
@@ -240,7 +246,7 @@ impl Fig {
                 push_constant_ranges: &[],
             });
 
-        let vertex_buffer = state.device.create_buffer_init(
+        let vertex_buffer = skeleton.device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Vertex Buffer"),
                 contents: bytemuck::cast_slice(vertices.as_slice()),
@@ -248,7 +254,7 @@ impl Fig {
             }
         );
 
-        let render_pipeline = state.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        let render_pipeline = skeleton.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
@@ -262,7 +268,7 @@ impl Fig {
                 module: &shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: state.config.format,
+                    format: skeleton.config.format,
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -291,27 +297,6 @@ impl Fig {
         // ====== END WIREFRAME PIPELINE ======
 
         // ====== TEXT BIND GROUP ======
-        let text_storage = text::Buffer::from("Hello World");
-        let mut text_uniform = text::Metadata::from(&text_storage);
-        text_uniform.pixel_size = [30; 2];
-        text_uniform.pixel_position = [20; 2];
-        text_uniform.kerning = 100;
-
-        let text_uniform_buffer = state.device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Text Metadata Buffer"),
-                contents: bytemuck::cast_slice(&[text_uniform]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            }
-        );
-
-        let text_storage_buffer = state.device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Text Storage Buffer"),
-                contents: text_storage.pack_glyphs(),
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            }
-        );
 
         // for the glyph textures i think i either want to use onion textures
         // or the descriptor thing mentioned here:
@@ -331,7 +316,7 @@ impl Fig {
         // one thing to note is that im not sure if ill have multiple font
         // sizes yet. i might, but i also might not and keep it all uniform
 
-        let text_bind_group_layout = state.device.create_bind_group_layout(
+        let text_bind_group_layout = skeleton.device.create_bind_group_layout(
             &wgpu::BindGroupLayoutDescriptor {
                 entries: &[
                     wgpu::BindGroupLayoutEntry { // screen metadata
@@ -368,37 +353,16 @@ impl Fig {
                 label: Some("text_bind_group_layout"),
             }
         );
-
-        let text_bind_group = state.device.create_bind_group(
-            &wgpu::BindGroupDescriptor {
-                layout: &text_bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: screen_uniform_buffer.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: text_uniform_buffer.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: text_storage_buffer.as_entire_binding(),
-                    },
-                ],
-                label: Some("text_bind_group"),
-            }
-        );
         // ====== END TEXT BIND GROUP ======
 
         // ====== TEXT PIPELINE ======
-        let text_shader = state.device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        let text_shader = skeleton.device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Text Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("textshader.wgsl").into()),
         });
 
         let text_pipeline_layout =
-            state.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            skeleton.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Text Pipeline Layout"),
                 bind_group_layouts: &[
                     &text_bind_group_layout,
@@ -417,7 +381,7 @@ impl Fig {
             Vertex::at(1.0,1.0,0.0),
             Vertex::at(0.0,0.0,0.0),
         ];
-        let text_vertex_buffer = state.device.create_buffer_init(
+        let text_vertex_buffer = skeleton.device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Text Vertex Buffer"),
                 contents: bytemuck::cast_slice(text_vertices.as_slice()),
@@ -425,7 +389,7 @@ impl Fig {
             }
         );
 
-        let text_pipeline = state.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        let text_pipeline = skeleton.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Text Pipeline"),
             layout: Some(&text_pipeline_layout),
             vertex: wgpu::VertexState {
@@ -439,7 +403,7 @@ impl Fig {
                 module: &text_shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: state.config.format,
+                    format: skeleton.config.format,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -478,10 +442,62 @@ impl Fig {
 
             text_vertex_buffer,
             text_pipeline,
-            text_buffer: text_storage,
-            text_bind_group,
+            text_bind_group_layout,
+            text_bind_groups: vec![],
 
             screen_metadata_buffer: screen_uniform_buffer,
+            
+            // command buffer inits to empty, we'll use len() to check for content
+            command_string: String::from("p"),
+        }
+    }
+
+    // create bind group from uniform buffers?
+    fn bind_text_line(&self, device: &wgpu::Device, text: text::TextLine) -> BoundTextLine {
+        let text_storage = text::Buffer::from(text.as_str());
+        let mut text_uniform = text::Metadata::from(&text_storage);
+        text_uniform.pixel_size = [40; 2];
+        text_uniform.pixel_position = [20; 2];
+        text_uniform.kerning = 100;
+
+        let text_uniform_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Text Metadata Buffer"),
+                contents: bytemuck::cast_slice(&[text_uniform]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            }
+        );
+
+        let text_storage_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Text Storage Buffer"),
+                contents: text_storage.pack_glyphs(),
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            }
+        );
+
+        BoundTextLine {
+            bind_group: device.create_bind_group(
+                &wgpu::BindGroupDescriptor {
+                    layout: &self.text_bind_group_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: self.screen_metadata_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: text_uniform_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: text_storage_buffer.as_entire_binding(),
+                        },
+                    ],
+                    label: Some("text_bind_group"),
+                }
+            ),
+            len: text.len(),
         }
     }
 }
@@ -492,7 +508,26 @@ impl graphics::Application for Fig {
     }
 
     fn input(&mut self, event: &winit::event::WindowEvent) -> bool {
-        self.camera_controller.process_events(event)
+        if self.camera_controller.process_events(event) { return true }
+        match event {
+            WindowEvent::KeyboardInput {
+                input: KeyboardInput {
+                    state,
+                    virtual_keycode: Some(keycode),
+                    ..
+                },
+                ..
+            } => {
+                //let is_pressed = *state == ElementState::Pressed;
+                if *state == ElementState::Pressed {
+                    match keycode {
+                        VirtualKeyCode::A => { self.command_string = self.command_string.to_owned() + "a"; println!("{}", self.command_string); true },
+                        _ => false,
+                    }
+                } else { false }
+            }
+            _ => false,
+        }
     }
 
     fn update(&mut self, queue: &wgpu::Queue) {
@@ -513,6 +548,16 @@ impl graphics::Application for Fig {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Render Encoder"),
         });
+
+        // update text
+        if (self.command_string.len() > 0) {
+            let text_storage = text::Buffer::from(&self.command_string.as_str());
+            let mut text_uniform = text::Metadata::from(&text_storage);
+            text_uniform.pixel_size = [40; 2];
+            text_uniform.pixel_position = [20; 2];
+            text_uniform.kerning = 100;
+            self.text_bind_groups[0] = self.bind_text_line(device, text::TextLine::from(text_storage, text_uniform));
+        }
 
         // geometry pass
         // nested so that we release the mutable borrow of encoder before calling encoder.finish()
@@ -540,32 +585,36 @@ impl graphics::Application for Fig {
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.draw(0..self.vertex_count, 0..1);    
+            render_pass.draw(0..self.vertex_count, 0..1);
         }
+        // same mutable borrow bullshit
+        {
+            // text pass
+            if self.text_bind_groups.len() > 0 {
+                let mut text_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Text Pass"),
+                    color_attachments: &[
+                        // target of @location(0) in fragment shader
+                        Some(wgpu::RenderPassColorAttachment {
+                            view: &view,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: true,
+                            },
+                        })
+                    ],
+                    depth_stencil_attachment: None,
+                });
 
-        // text pass
-        if self.text_buffer.len() > 0 {
-            let mut text_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Text Pass"),
-                color_attachments: &[
-                    // target of @location(0) in fragment shader
-                    Some(wgpu::RenderPassColorAttachment {
-                        view: &view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: true,
-                        },
-                    })
-                ],
-                depth_stencil_attachment: None,
-            });
-
-            text_pass.set_pipeline(&self.text_pipeline);
-            text_pass.set_bind_group(0, &self.text_bind_group, &[]);
-            text_pass.set_bind_group(1, &self.glyph_bind_group, &[]);
-            text_pass.set_vertex_buffer(0, self.text_vertex_buffer.slice(..));
-            text_pass.draw(0..6, 0..self.text_buffer.len() as u32);
+                text_pass.set_pipeline(&self.text_pipeline);
+                for binding in &self.text_bind_groups {
+                    text_pass.set_bind_group(0, &binding.bind_group, &[]);
+                    text_pass.set_bind_group(1, &self.glyph_bind_group, &[]);
+                    text_pass.set_vertex_buffer(0, self.text_vertex_buffer.slice(..));
+                    text_pass.draw(0..6, 0..binding.len as u32);
+                }
+            }
         }
     
         // submit will accept anything that implements IntoIter
@@ -626,7 +675,14 @@ fn main() {
     //println!("{:?}", vertices);
 
     // initialize shaders and hook handlers
-    let app = Fig::init(&skeleton, vertices);
+    let mut app = Fig::init(&skeleton, vertices);
+
+    let text_storage = text::Buffer::from(&app.command_string.as_str());
+    let mut text_uniform = text::Metadata::from(&text_storage);
+    text_uniform.pixel_size = [40; 2];
+    text_uniform.pixel_position = [20; 2];
+    text_uniform.kerning = 100;
+    app.text_bind_groups.push(app.bind_text_line(&skeleton.device, text::TextLine::from(text_storage, text_uniform)));
 
     graphics::run::<Fig>(app, skeleton);
 }

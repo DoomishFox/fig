@@ -1,14 +1,27 @@
+#[derive(Clone)]
 pub struct TextLine {
     buffer: Buffer,
     metadata: Metadata,
 }
 
 impl TextLine {
+    pub fn from(buf: Buffer, meta: Metadata) -> Self {
+        Self {
+            buffer: buf,
+            metadata: meta
+        }
+    }
     pub fn empty() -> Self {
         Self {
             buffer: Buffer::from(""),
             metadata: Metadata::empty(),
         }
+    }
+    pub fn len(&self) -> usize {
+        self.buffer.len()
+    }
+    pub fn as_str(&self) -> &str {
+        self.buffer.chars.as_str()
     }
 }
 
@@ -129,6 +142,7 @@ impl Glyph {
     }
 }
 
+#[derive(Clone)]
 pub struct Buffer {
     chars: String,
     glyphs: Vec<Glyph>,
