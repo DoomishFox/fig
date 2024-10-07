@@ -521,7 +521,9 @@ name = "fox-graphics"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
+ "cgmath",
  "env_logger",
+ "glam",
  "log",
  "wgpu",
  "winit",
