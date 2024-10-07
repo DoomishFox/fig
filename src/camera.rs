@@ -1,4 +1,9 @@
+use cgmath::EuclideanSpace;
+use glam::{Mat4, Vec3};
+use graphics::vector::Vector3;
 use winit::event::{WindowEvent, KeyboardInput, ElementState, VirtualKeyCode};
+
+//use graphics::vector::{Mat4, Vector3};
 
 #[rustfmt::skip]
 pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
@@ -10,8 +15,8 @@ pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
 
 
 // move to fox-graphics eventually?
-pub struct Camera3D {
-    pub camera: Camera,
+pub struct Camera3D<C: Camera> {
+    pub camera: C,
     pub uniform: CameraUniform,
     pub buffer: wgpu::Buffer,
     pub bind_group_layout: wgpu::BindGroupLayout,
@@ -19,24 +24,54 @@ pub struct Camera3D {
     pub controller: CameraController,
 }
 
-pub struct Camera {
-    pub eye: cgmath::Point3<f32>,
-    pub target: cgmath::Point3<f32>,
-    pub up: cgmath::Vector3<f32>,
+pub enum CameraType {
+    FPSCamera {
+        eye: Vector3<f32>,
+        target: Vector3<f32>,
+        up: Vector3<f32>,
+        aspect: f32,
+        fovy: f32,
+        znear: f32,
+        zfar: f32,
+    },
+    OrbitCamera {
+        eye: Vec3,
+        target: Vec3,
+        up: Vec3,
+        distance: f32,
+        pitch: f32,
+        yaw: f32,
+        //bounds: OrbitCameraBounds,
+        aspect: f32,
+        fovy: f32,
+        znear: f32,
+        zfar: f32,
+    },
+}
+
+trait Camera {
+    fn build_view_projection_matrix(&self) -> Mat4;
+}
+
+pub struct CameraLegacy {
+    pub eye: Vector3<f32>,
+    pub target: Vector3<f32>,
+    pub up: Vector3<f32>,
     pub aspect: f32,
     pub fovy: f32,
     pub znear: f32,
     pub zfar: f32,
 }
 
-impl Camera {
-    fn build_view_projection_matrix(&self) -> cgmath::Matrix4<f32> {
-        // 1.
-        let view = cgmath::Matrix4::look_at_rh(self.eye, self.target, self.up);
-        // 2.
-        let proj = cgmath::perspective(cgmath::Deg(self.fovy), self.aspect, self.znear, self.zfar);
-        // 3.
-        return OPENGL_TO_WGPU_MATRIX * proj * view;
+impl Camera for CameraLegacy {
+    fn build_view_projection_matrix(&self) -> Mat4 {
+        let view = Mat4::look_at_rh(
+            Vec3::new(self.eye.x, self.eye.y, self.eye.z),
+            Vec3::new(self.target.x, self.target.y, self.target.z),
+            Vec3::new(self.up.x, self.up.y, self.up.z)
+        );
+        let proj = Mat4::perspective_rh(self.fovy, self.aspect, self.znear, self.zfar);
+        proj * view
     }
 }
 
@@ -58,8 +93,8 @@ impl CameraUniform {
         }
     }
 
-    pub fn update_view_proj(&mut self, camera: &Camera) {
-        self.view_proj = camera.build_view_projection_matrix().into();
+    pub fn update_view_proj(&mut self, camera: &CameraLegacy) {
+        self.view_proj = camera.build_view_projection_matrix().to_cols_array_2d();
     }
 }
 
@@ -120,7 +155,8 @@ impl CameraController {
         }
     }
 
-    pub fn update_camera(&self, camera: &mut Camera) {
+    pub fn update_camera(&self, camera: &mut CameraLegacy) {
+        /*
         use cgmath::InnerSpace;
         let forward = camera.target - camera.eye;
         let forward_norm = forward.normalize();
@@ -150,5 +186,6 @@ impl CameraController {
         if self.is_left_pressed {
             camera.eye = camera.target - (forward - right * self.speed).normalize() * forward_mag;
         }
+        */
     }
 }

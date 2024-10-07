@@ -1,4 +1,3 @@
-#[derive(Clone)]
 pub struct TextLine {
     buffer: Buffer,
     metadata: Metadata,
@@ -8,7 +7,7 @@ impl TextLine {
     pub fn from(buf: Buffer, meta: Metadata) -> Self {
         Self {
             buffer: buf,
-            metadata: meta
+            metadata: meta,
         }
     }
     pub fn empty() -> Self {

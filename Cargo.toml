@@ -23,3 +23,4 @@ dcommon = "0.3.0-alpha1"
 gcode = { package = "fox-gcode", path = "../fox-gcode" }
 #graphics = { package = "fox-graphics", git = "https://github.com/DoomishFox/fox-graphics", branch = "main" }
 graphics = { package = "fox-graphics", path = "../fox-graphics" }
+glam = "0.29.0"

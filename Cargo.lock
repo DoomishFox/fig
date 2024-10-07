@@ -480,6 +480,7 @@ dependencies = [
  "dcommon",
  "fox-gcode",
  "fox-graphics",
+ "glam",
  "log",
  "pollster",
  "wgpu",
@@ -531,6 +532,12 @@ name = "gimli"
 version = "0.28.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4271d37baee1b8c7e4b708028c57d816cf9d2434acb33a549475f78c181f6253"
+
+[[package]]
+name = "glam"
+version = "0.29.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c28091a37a5d09b555cb6628fd954da299b536433834f5b8e59eba78e0cbbf8a"
 
 [[package]]
 name = "glow"
